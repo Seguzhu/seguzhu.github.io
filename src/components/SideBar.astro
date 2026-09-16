@@ -1,0 +1,49 @@
+---
+import SideBarFooter from "./SideBarFooter.astro";
+import SideBarMenu from "./SideBarMenu.astro";
+const { sideBarActiveItemID } = Astro.props;
+---
+
+<div class="drawer-side z-40">
+  <label for="my-drawer" class="drawer-overlay"></label>
+  <aside class="px-2 pt-2 h-auto min-h-full w-[19rem] bg-base-200 text-base-content flex flex-col">
+    <div class="w-fit mx-auto mt-5 mb-6">
+      <a href="/">
+        <div class="avatar transition ease-in-out hover:scale-[102%] block m-auto">
+          <div class="w-[8.5rem]">
+            <img class="aspect-square object-cover rounded-full w-full" src="/avatar.jpg" alt="头像" />
+          </div>
+        </div>
+      </a>
+    </div>
+    <SideBarMenu sideBarActiveItemID={sideBarActiveItemID} />
+    <div class="px-4 mt-4">
+      <label class="text-sm opacity-70 block mb-1" for="theme-switcher">🎨 主题配色</label>
+      <select
+        id="theme-switcher"
+        class="select select-bordered select-sm w-full"
+        onchange="(function(el){document.documentElement.setAttribute('data-theme', el.value); try{localStorage.setItem('theme', el.value);}catch(e){}})(this)"
+      >
+        <option value="lofi">Lofi（极简黑白）</option>
+        <option value="cupcake">Cupcake（马卡龙软萌）</option>
+        <option value="pastel">Pastel（粉彩柔和）</option>
+        <option value="valentine">Valentine（粉嫩甜美）</option>
+        <option value="garden">Garden（清新花园）</option>
+        <option value="emerald">Emerald（薄荷绿）</option>
+        <option value="lemonade">Lemonade（柠檬汽水）</option>
+        <option value="autumn">Autumn（秋日暖橙）</option>
+        <option value="winter">Winter（冬日浅色）</option>
+        <option value="aqua">Aqua（水蓝活力）</option>
+        <option value="retro">Retro（复古暖色）</option>
+        <option value="synthwave">Synthwave（赛博紫）</option>
+        <option value="dracula">Dracula（暗夜吸血鬼）</option>
+        <option value="night">Night（静谧夜色）</option>
+        <option value="coffee">Coffee（咖啡拿铁）</option>
+        <option value="forest">Forest（深林绿）</option>
+        <option value="light">Light（默认浅色）</option>
+        <option value="dark">Dark（默认深色）</option>
+      </select>
+    </div>
+    <SideBarFooter />
+  </aside>
+</div>
