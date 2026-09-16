@@ -1,0 +1,43 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import HorizontalCard from "../components/HorizontalCard.astro";
+---
+
+<BaseLayout title = "项目" sideBarActiveItemID="projects">
+  <div>
+    <div class="text-3xl w-full font-bold mb-5">🛠️ 正在做</div>
+  </div>
+
+  <HorizontalCard
+    title="🌀 3D 游戏防晕眩工具"
+    img="/post_img.webp"
+    desc="给晕 3D 的玩家做的缓解工具：玩 3D 游戏时减轻眩晕感。AI 辅助开发的实验性项目，持续迭代中。"
+    url="#"
+    badge="制作中"
+  />
+  <div class="divider my-0"></div>
+  <HorizontalCard
+    title="🍋 这个个人网站"
+    img="/post_img.webp"
+    desc="你现在看到的网站本身也是一个项目：基于开源模板 Astrofy 改造，Lemonade 主题。"
+    url="/"
+  />
+
+  <div>
+    <div class="text-3xl w-full font-bold mb-5 mt-10">💡 想做（占位）</div>
+  </div>
+
+  <HorizontalCard
+    title="🌱 占位卡片"
+    img="/post_img.webp"
+    desc="把以后想做的点子放这里：新工具、新作品、新企划……想到什么写什么。"
+    url="#"
+  />
+  <div class="divider my-0"></div>
+  <HorizontalCard
+    title="🌱 占位卡片"
+    img="/post_img.webp"
+    desc="不需要就删掉，需要更多就复制一份改文字。"
+    url="#"
+  />
+</BaseLayout>
