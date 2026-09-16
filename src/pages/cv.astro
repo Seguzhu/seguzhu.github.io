@@ -1,0 +1,50 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import TimeLineElement from "../components/cv/TimeLine.astro";
+---
+
+<BaseLayout title="关于我" sideBarActiveItemID="cv">
+  <div class="mb-5">
+    <div class="text-3xl w-full font-bold">关于我</div>
+  </div>
+
+  <div class="mb-10 text-justify">
+    你好，我是<b>彭行也</b>，一个多元兴趣者。目前在学<b>电吉他</b>和<b>日语</b>。
+    我是一个看见<b>百合</b>就会通体舒泰的女人，但没有兴趣聊BG和BL的话题。
+    这个小站用来存放我的学习分享、听读体会和一些 AI 制作的小工具。
+  </div>
+
+  <div class="mb-5">
+    <div class="text-3xl w-full font-bold">教育背景</div>
+  </div>
+
+  <div class="time-line-container grid gap-4 mb-10">
+    <TimeLineElement
+      title="211 本科（天坑专业）"
+      subtitle="2022 – 2026"
+    />
+  </div>
+
+  <div class="mb-5">
+    <div class="text-3xl w-full font-bold">经历</div>
+  </div>
+
+  <div class="time-line-container mb-10">
+    <TimeLineElement
+      title="STILL NOTHING"
+      subtitle="From 2005"
+    >
+      路还长，慢慢走。
+    </TimeLineElement>
+  </div>
+
+  <div class="mb-5">
+    <div class="text-3xl w-full font-bold">技能 & 爱好</div>
+  </div>
+
+  <ul class="list-disc md:columns-5 columns-2 mx-6">
+    <li>电吉他（学习中）</li>
+    <li>日语（学习中）</li>
+    <li>硬笔书法</li>
+  </ul>
+</BaseLayout>
