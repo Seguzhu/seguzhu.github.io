@@ -2,7 +2,7 @@
 title: 我的第一篇博客
 pubDate: 2026-09-16
 description: 关于我开始构建个人网站写博客这件事。
-heroImage: /post_img.webp
+heroImage: /shuozhengshi.webp
 ---
 
 ## 我是谁
