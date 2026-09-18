@@ -9,11 +9,16 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     <div class="text-3xl w-full font-bold">🔒 私人日记本</div>
   </div>
 
+  <!-- 到期提醒（无需解锁即可显示：日期本身是明文） -->
+  <div id="expwarn" class="hidden alert alert-warning mb-6 flex-col items-start gap-1"></div>
+
   <!-- 解锁卡片 -->
   <div id="lockcard" class="card bg-base-100 shadow-md mb-8">
     <div class="card-body">
       <div class="opacity-80 mb-2">
         这里的日记全程加密存放，服务器和仓库里只有密文。输入密码在本地解密阅读。
+        <br />
+        <span class="text-sm opacity-70">规则：每篇日记保留 30 天，到期自动从阅读中隐藏，生成新文件时彻底删除；到期前 7 天每次打开本页都会提醒。</span>
       </div>
       <div class="flex gap-2">
         <input id="pw" type="password" class="input input-bordered w-full max-w-xs" placeholder="密码" />
@@ -29,7 +34,15 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       <div class="text-2xl font-bold">日记</div>
       <button id="relock" class="btn btn-ghost btn-sm">锁上 🔒</button>
     </div>
+    <!-- 日期目录 -->
+    <div id="tocdates" class="flex flex-wrap gap-2 mb-4"></div>
     <div id="list"></div>
+  </div>
+
+  <!-- 删除操作条 -->
+  <div id="delbar" class="hidden alert alert-warning mt-4 flex-col items-start gap-2">
+    <div id="deltext"></div>
+    <button id="mkclean" class="btn btn-sm">生成清理版文件（剔除标记删除的 + 已过期的）</button>
   </div>
 
   <!-- 写新日记工具 -->
@@ -46,6 +59,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
         <input id="wpw" type="password" class="input input-bordered" placeholder="日记密码（和解锁用的同一个）" />
         <textarea id="wbody" class="textarea textarea-bordered min-h-40" placeholder="正文随便写。支持 ## 标题、**加粗**，空行分段。"></textarea>
         <button id="gen" class="btn btn-primary">生成加密内容</button>
+        <div id="winfo" class="opacity-70"></div>
         <div id="wmsg" class="text-error hidden"></div>
       </div>
       <div id="woutWrap" class="hidden mt-4">
@@ -60,6 +74,9 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     const $ = (id) => document.getElementById(id);
     const enc = new TextEncoder();
     const dec = new TextDecoder();
+    const EXPIRE_DAYS = 30; // 每篇日记保留天数
+    const WARN_DAYS = 7;    // 到期前多少天开始提醒
+    let marked = new Set(); // 手动标记删除的日期
 
     function b64(bytes) {
       let bin = "";
@@ -114,6 +131,13 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       el.textContent = text;
       el.classList.remove("hidden");
     }
+    // 距过期还剩几天（负数 = 已过期）
+    function daysLeft(dateStr) {
+      const t = new Date(dateStr + "T00:00:00");
+      const n = new Date();
+      const today = new Date(n.getFullYear(), n.getMonth(), n.getDate());
+      return EXPIRE_DAYS - Math.floor((today - t) / 86400000);
+    }
 
     async function loadDiary() {
       const r = await fetch("/diary.json", { cache: "no-store" });
@@ -121,7 +145,28 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       return Array.isArray(j) ? j : [];
     }
 
-    // 解锁
+    // ============ 到期提醒（打开页面即检查，无需解锁） ============
+    (async () => {
+      let arr;
+      try { arr = await loadDiary(); } catch (_) { return; }
+      const expired = arr.filter((e) => daysLeft(e.date) < 0);
+      const expiring = arr.filter((e) => { const dl = daysLeft(e.date); return dl >= 0 && dl < WARN_DAYS; });
+      if (expired.length === 0 && expiring.length === 0) return;
+      let html = "";
+      if (expired.length > 0) {
+        html += "<div>🗄️ " + expired.length + " 篇日记已过 30 天保留期：阅读中已隐藏，生成新文件时会彻底删除。</div>";
+      }
+      if (expiring.length > 0) {
+        html += "<div>⚠️ <b>清除倒计时提醒</b>——以下日记将在保留期结束后自动清除：</div>";
+        html += "<ul class='list-disc ml-6'>" + expiring.map((e) =>
+          "<li>" + esc(e.title || e.date) + "（" + e.date + "）还剩 <b>" + daysLeft(e.date) + "</b> 天</li>"
+        ).join("") + "</ul>";
+      }
+      $("expwarn").innerHTML = html;
+      $("expwarn").classList.remove("hidden");
+    })();
+
+    // ============ 解锁 ============
     $("unlock").addEventListener("click", async () => {
       const pw = $("pw").value;
       if (!pw) { showErr("msg", "先输入密码。"); return; }
@@ -129,27 +174,63 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       try {
         const arr = await loadDiary();
         if (arr.length > 0) {
-          await decryptBody(pw, arr[0]); // 用第一篇验证密码
+          await decryptBody(pw, arr.find((e) => daysLeft(e.date) >= 0) || arr[0]); // 验证密码
         }
         const withBody = [];
         for (const e of arr) {
           try { withBody.push({ ...e, body: await decryptBody(pw, e) }); } catch (_) {}
         }
         withBody.sort((a, b) => (a.date < b.date ? 1 : -1));
-        $("list").innerHTML = withBody
+        const visible = withBody.filter((e) => daysLeft(e.date) >= 0);
+        const hiddenN = withBody.length - visible.length;
+
+        // 日期目录（只列还能看的）
+        $("tocdates").innerHTML = visible
+          .map((e) => '<button class="btn btn-xs btn-outline" data-target="entry-' + e.date + '">' + e.date + "</button>")
+          .join("");
+        $("tocdates").onclick = (ev) => {
+          const b = ev.target.closest("button[data-target]");
+          if (!b) return;
+          const el = document.getElementById(b.dataset.target);
+          if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+        };
+
+        $("list").innerHTML = visible
           .map(
             (e) =>
-              '<div class="card bg-base-100 shadow-md mb-4"><div class="card-body">' +
-              '<div class="flex justify-between items-baseline"><div class="font-bold text-lg">' +
-              esc(e.title || e.date) + '</div><div class="opacity-60 text-sm">' + esc(e.date) +
-              "</div></div>" + mdLite(e.body) + "</div></div>"
+              '<div class="card bg-base-100 shadow-md mb-4 scroll-mt-4" id="entry-' + e.date + '"><div class="card-body">' +
+              '<div class="flex justify-between items-center gap-2"><div class="font-bold text-lg">' +
+              esc(e.title || e.date) + '</div><div class="flex items-center gap-2"><span class="opacity-60 text-sm">' + esc(e.date) +
+              '</span><button class="btn btn-ghost btn-xs text-error delbtn" data-date="' + e.date + '">🗑 删除</button></div></div>' +
+              mdLite(e.body) + "</div></div>"
           )
           .join("");
+        $("list").onclick = (ev) => {
+          const btn = ev.target.closest(".delbtn");
+          if (!btn) return;
+          const d = btn.dataset.date;
+          const card = btn.closest(".card");
+          if (marked.has(d)) {
+            marked.delete(d);
+            card.classList.remove("border-2", "border-error");
+            btn.textContent = "🗑 删除";
+          } else {
+            marked.add(d);
+            card.classList.add("border-2", "border-error");
+            btn.textContent = "撤销删除";
+          }
+          updateDelbar(visible.length);
+        };
+
+        if (visible.length === 0 && hiddenN === 0) {
+          $("list").innerHTML = '<div class="opacity-60">日记本还是空的。展开下面的「写新日记」写下第一篇吧。</div>';
+        } else if (visible.length === 0 && hiddenN > 0) {
+          $("list").innerHTML = '<div class="opacity-60">没有在保留期内的日记（' + hiddenN + ' 篇已过期隐藏）。展开下面的「写新日记」写新的一篇吧。</div>';
+        } else if (hiddenN > 0) {
+          $("list").innerHTML += '<div class="opacity-60 mt-2">另有一篇或多篇日记已过保留期，已隐藏。</div>';
+        }
         $("lockcard").classList.add("hidden");
         $("entries").classList.remove("hidden");
-        if (withBody.length === 0) {
-          $("list").innerHTML = '<div class="opacity-60">日记本还是空的。展开下面的「写新日记」写下第一篇吧。</div>';
-        }
         $("writer").classList.remove("hidden");
       } catch (_) {
         showErr("msg", "密码不对，或者日记文件有问题。");
@@ -157,14 +238,42 @@ import BaseLayout from "../layouts/BaseLayout.astro";
     });
     $("pw").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("unlock").click(); });
 
-    // 锁上
-    $("relock").addEventListener("click", () => {
-      $("entries").classList.add("hidden");
-      $("lockcard").classList.remove("hidden");
-      $("pw").value = "";
+    function updateDelbar(totalVisible) {
+      const bar = $("delbar");
+      if (marked.size === 0) { bar.classList.add("hidden"); return; }
+      $("deltext").textContent =
+        "已标记 " + marked.size + " 篇待删除（" + [...marked].sort().join("、") +
+        "）。点下面的按钮生成不含它们（也不含已过期）的新文件，覆盖 public/diary.json 即完成删除。";
+      bar.classList.remove("hidden");
+    }
+
+    // 生成清理版（删除标记的 + 已过期的）
+    $("mkclean").addEventListener("click", async () => {
+      let arr = [];
+      try { arr = await loadDiary(); } catch (_) {}
+      const expiredN = arr.filter((e) => daysLeft(e.date) < 0).length;
+      const kept = arr
+        .filter((e) => daysLeft(e.date) >= 0 && !marked.has(e.date))
+        .sort((a, b) => (a.date < b.date ? -1 : 1));
+      $("winfo").textContent =
+        "清理版：线上共 " + arr.length + " 篇 → 剔除标记删除 " + marked.size + " 篇、已过期 " + expiredN +
+        " 篇 → 保留 " + kept.length + " 篇。确认篇数没问题就复制覆盖 public/diary.json。";
+      $("wout").value = JSON.stringify(kept, null, 2);
+      $("woutWrap").classList.remove("hidden");
+      $("writer").open = true;
+      $("writer").scrollIntoView({ behavior: "smooth" });
     });
 
-    // 写新日记
+    // ============ 锁上 ============
+    $("relock").addEventListener("click", () => {
+      $("entries").classList.add("hidden");
+      $("delbar").classList.add("hidden");
+      $("lockcard").classList.remove("hidden");
+      $("pw").value = "";
+      marked = new Set();
+    });
+
+    // ============ 写新日记 ============
     $("wdate").value = new Date().toISOString().slice(0, 10);
     $("gen").addEventListener("click", async () => {
       $("wmsg").classList.add("hidden");
@@ -178,15 +287,26 @@ import BaseLayout from "../layouts/BaseLayout.astro";
       const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(body));
       let arr = [];
       try { arr = await loadDiary(); } catch (_) {}
-      arr.push({
+      const expiredN = arr.filter((e) => daysLeft(e.date) < 0).length;
+      const markedN = arr.filter((e) => marked.has(e.date)).length;
+      const soonN = arr.filter((e) => { const dl = daysLeft(e.date); return dl >= 0 && dl < WARN_DAYS; }).length;
+      const live = arr.filter((e) => daysLeft(e.date) >= 0 && !marked.has(e.date));
+      live.push({
         title: $("wtitle").value.trim() || $("wdate").value,
         date: $("wdate").value,
         salt: b64(salt),
         iv: b64(iv),
         data: b64(ct),
       });
-      arr.sort((a, b) => (a.date < b.date ? -1 : 1));
-      $("wout").value = JSON.stringify(arr, null, 2);
+      live.sort((a, b) => (a.date < b.date ? -1 : 1));
+      $("winfo").textContent =
+        "线上共 " + arr.length + " 篇：剔除已过期 " + expiredN + " 篇、手动标记删除 " + markedN +
+        " 篇，加新写 1 篇 → 共输出 " + live.length + " 篇。" +
+        (arr.length === 0
+          ? "⚠️ 如果你的上一篇日记刚 Commit 但还没上线，先别覆盖文件，等它上线或喊 AI 发布！"
+          : "请核对篇数对不对再覆盖文件。") +
+        (soonN > 0 ? " ⏳ 另有 " + soonN + " 篇已进入保留期最后 7 天，本次若不清理，它们到期后会被隐藏并在下次生成时删除。" : "");
+      $("wout").value = JSON.stringify(live, null, 2);
       $("woutWrap").classList.remove("hidden");
     });
 
