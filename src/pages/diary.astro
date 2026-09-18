@@ -1,0 +1,199 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout title="日记本" sideBarActiveItemID="diary">
+  <meta name="robots" content="noindex, nofollow" />
+
+  <div class="mb-5">
+    <div class="text-3xl w-full font-bold">🔒 私人日记本</div>
+  </div>
+
+  <!-- 解锁卡片 -->
+  <div id="lockcard" class="card bg-base-100 shadow-md mb-8">
+    <div class="card-body">
+      <div class="opacity-80 mb-2">
+        这里的日记全程加密存放，服务器和仓库里只有密文。输入密码在本地解密阅读。
+      </div>
+      <div class="flex gap-2">
+        <input id="pw" type="password" class="input input-bordered w-full max-w-xs" placeholder="密码" />
+        <button id="unlock" class="btn btn-primary">解锁</button>
+      </div>
+      <div id="msg" class="text-error mt-2 hidden"></div>
+    </div>
+  </div>
+
+  <!-- 解锁后的日记列表 -->
+  <div id="entries" class="hidden">
+    <div class="flex justify-between items-center mb-4">
+      <div class="text-2xl font-bold">日记</div>
+      <button id="relock" class="btn btn-ghost btn-sm">锁上 🔒</button>
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <!-- 写新日记工具 -->
+  <details id="writer" class="collapse collapse-arrow bg-base-200 mt-10">
+    <summary class="collapse-title text-lg font-bold">✍️ 写新日记（生成加密文件）</summary>
+    <div class="collapse-content">
+      <div class="opacity-80 mb-3">
+        填好后点「生成」，把下面输出的全部内容复制，去 GitHub 仓库的
+        <code>public/diary.json</code> 文件里全选替换粘贴，Commit 即可。
+      </div>
+      <div class="flex flex-col gap-2 max-w-xl">
+        <input id="wdate" type="date" class="input input-bordered" />
+        <input id="wtitle" type="text" class="input input-bordered" placeholder="标题（可留空，默认用日期）" />
+        <input id="wpw" type="password" class="input input-bordered" placeholder="日记密码（和解锁用的同一个）" />
+        <textarea id="wbody" class="textarea textarea-bordered min-h-40" placeholder="正文随便写。支持 ## 标题、**加粗**，空行分段。"></textarea>
+        <button id="gen" class="btn btn-primary">生成加密内容</button>
+        <div id="wmsg" class="text-error hidden"></div>
+      </div>
+      <div id="woutWrap" class="hidden mt-4">
+        <div class="font-bold mb-1">把下面这段完整复制 → GitHub 仓库 → public/diary.json → 铅笔编辑 → 全选替换 → Commit：</div>
+        <textarea id="wout" class="textarea textarea-bordered font-mono text-xs w-full min-h-60" readonly></textarea>
+        <button id="copy" class="btn btn-sm mt-2">📋 复制全部</button>
+      </div>
+    </div>
+  </details>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+
+    function b64(bytes) {
+      let bin = "";
+      const u = new Uint8Array(bytes);
+      for (let i = 0; i < u.length; i += 0x8000) {
+        bin += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
+      }
+      return btoa(bin);
+    }
+    function unb64(s) {
+      const bin = atob(s);
+      const u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      return u;
+    }
+    async function deriveKey(pw, salt) {
+      const base = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveKey"]);
+      return crypto.subtle.deriveKey(
+        { name: "PBKDF2", salt, iterations: 250000, hash: "SHA-256" },
+        base,
+        { name: "AES-GCM", length: 256 },
+        false,
+        ["encrypt", "decrypt"]
+      );
+    }
+    async function decryptBody(pw, e) {
+      const key = await deriveKey(pw, unb64(e.salt));
+      const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(e.iv) }, key, unb64(e.data));
+      return dec.decode(plain);
+    }
+    function esc(s) {
+      return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+    function mdLite(t) {
+      let html = "", open = false;
+      for (const raw of t.split(/\r?\n/)) {
+        const line = esc(raw);
+        if (line.trim() === "") { if (open) { html += "</p>"; open = false; } continue; }
+        if (line.startsWith("## ")) {
+          if (open) { html += "</p>"; open = false; }
+          html += '<h3 class="text-xl font-bold mt-5 mb-2">' + line.slice(3) + "</h3>";
+          continue;
+        }
+        if (!open) { html += '<p class="leading-loose my-2">'; open = true; } else { html += "<br>"; }
+        html += line.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+      }
+      if (open) html += "</p>";
+      return html;
+    }
+    function showErr(id, text) {
+      const el = $(id);
+      el.textContent = text;
+      el.classList.remove("hidden");
+    }
+
+    async function loadDiary() {
+      const r = await fetch("/diary.json", { cache: "no-store" });
+      const j = await r.json();
+      return Array.isArray(j) ? j : [];
+    }
+
+    // 解锁
+    $("unlock").addEventListener("click", async () => {
+      const pw = $("pw").value;
+      if (!pw) { showErr("msg", "先输入密码。"); return; }
+      $("msg").classList.add("hidden");
+      try {
+        const arr = await loadDiary();
+        if (arr.length > 0) {
+          await decryptBody(pw, arr[0]); // 用第一篇验证密码
+        }
+        const withBody = [];
+        for (const e of arr) {
+          try { withBody.push({ ...e, body: await decryptBody(pw, e) }); } catch (_) {}
+        }
+        withBody.sort((a, b) => (a.date < b.date ? 1 : -1));
+        $("list").innerHTML = withBody
+          .map(
+            (e) =>
+              '<div class="card bg-base-100 shadow-md mb-4"><div class="card-body">' +
+              '<div class="flex justify-between items-baseline"><div class="font-bold text-lg">' +
+              esc(e.title || e.date) + '</div><div class="opacity-60 text-sm">' + esc(e.date) +
+              "</div></div>" + mdLite(e.body) + "</div></div>"
+          )
+          .join("");
+        $("lockcard").classList.add("hidden");
+        $("entries").classList.remove("hidden");
+        if (withBody.length === 0) {
+          $("list").innerHTML = '<div class="opacity-60">日记本还是空的。展开下面的「写新日记」写下第一篇吧。</div>';
+        }
+        $("writer").classList.remove("hidden");
+      } catch (_) {
+        showErr("msg", "密码不对，或者日记文件有问题。");
+      }
+    });
+    $("pw").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("unlock").click(); });
+
+    // 锁上
+    $("relock").addEventListener("click", () => {
+      $("entries").classList.add("hidden");
+      $("lockcard").classList.remove("hidden");
+      $("pw").value = "";
+    });
+
+    // 写新日记
+    $("wdate").value = new Date().toISOString().slice(0, 10);
+    $("gen").addEventListener("click", async () => {
+      $("wmsg").classList.add("hidden");
+      const pw = $("wpw").value;
+      const body = $("wbody").value.trim();
+      if (!pw) { showErr("wmsg", "要填日记密码（新建日记也用同一个密码，否则旧密码解不开这篇）。"); return; }
+      if (!body) { showErr("wmsg", "正文还空着。"); return; }
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const key = await deriveKey(pw, salt);
+      const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(body));
+      let arr = [];
+      try { arr = await loadDiary(); } catch (_) {}
+      arr.push({
+        title: $("wtitle").value.trim() || $("wdate").value,
+        date: $("wdate").value,
+        salt: b64(salt),
+        iv: b64(iv),
+        data: b64(ct),
+      });
+      arr.sort((a, b) => (a.date < b.date ? -1 : 1));
+      $("wout").value = JSON.stringify(arr, null, 2);
+      $("woutWrap").classList.remove("hidden");
+    });
+
+    $("copy").addEventListener("click", async () => {
+      await navigator.clipboard.writeText($("wout").value);
+      $("copy").textContent = "✅ 已复制";
+      setTimeout(() => ($("copy").textContent = "📋 复制全部"), 1500);
+    });
+  </script>
+</BaseLayout>
