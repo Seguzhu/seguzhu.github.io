@@ -2,7 +2,8 @@
 title: 日语复习
 pubDate: 2026-09-18
 description: 似乎把日语课文写成了喜欢的角色们的对话。
-heroImage: /post_img.webp
+heroImage: /OIP-C.webp
+tags: ["日语"]
 ---
 
 ## 第一課-初（はじ）めまして
